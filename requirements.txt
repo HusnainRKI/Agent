@@ -1,0 +1,7 @@
+selenium
+webdriver-manager
+requests
+python-dotenv
+Pillow
+numpy
+opencv-python
