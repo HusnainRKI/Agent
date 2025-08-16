@@ -105,9 +105,9 @@ logger.addHandler(error_handler)
 # AI Configuration - Multi-Model Support
 AI_CONFIGS = {
     "typegpt": {
-        "api_key": os.getenv("TYPEGPT_API_KEY", "sk-qKyofcYMp98THwbRpRb4CBp5lQzSTC9iAX1E1rKhxedU4oYc"),
-        "endpoint": "https://api.typegpt.net/v1/chat/completions",
-        "model": "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8"
+        "api_key": os.getenv("TYPEGPT_API_KEY", ""),
+        "endpoint": "https://api.example.com/v1/chat/completions",
+        "model": "model-name"
     },
     "openai": {
         "api_key": os.getenv("OPENAI_API_KEY", ""),
