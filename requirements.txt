@@ -1,7 +1,13 @@
-selenium
-webdriver-manager
 requests
 python-dotenv
-Pillow
+selenium
+webdriver-manager
+pillow
 numpy
 opencv-python
+pyyaml
+pandas
+openpyxl
+psutil
+websocket-client
+schedule
