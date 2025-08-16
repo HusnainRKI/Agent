@@ -9,7 +9,7 @@ This isn't just a simple automation script. It's a powerful framework that provi
 
 ## ✨ Features
 
-This project is packed with over 50 advanced features, making it a robust platform for web automation.
+This project is packed with over 100+ advanced features, making it a robust platform for web automation.
 
 #### 🧠 **AI-Powered Core**
 *   **Natural Language Control:** Give the agent complex objectives in plain English.
