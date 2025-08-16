@@ -82,13 +82,19 @@ source venv/bin/activate
 Create a `requirements.txt` file with the following contents:
 
 ```txt
-selenium
-webdriver-manager
 requests
 python-dotenv
-Pillow
+selenium
+webdriver-manager
+pillow
 numpy
 opencv-python
+pyyaml
+pandas
+openpyxl
+psutil
+websocket-client
+schedule
 ```
 
 Then, install them using pip:
