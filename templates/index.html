@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Browser Agent - Web Interface</title>
+    
+    <!-- Real Socket.IO Client -->
+    <script src="/socket.io/socket.io.js"></script>
+    
+    <!-- Custom Styles -->
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .app-container {
+            display: flex;
+            height: 100vh;
+            background: #f8f9fa;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            width: 300px;
+            background: #2c3e50;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #34495e;
+        }
+        
+        .sidebar-header {
+            padding: 20px;
+            background: #34495e;
+            border-bottom: 1px solid #4a5f7a;
+        }
+        
+        .sidebar-header h1 {
+            font-size: 1.4rem;
+            margin-bottom: 5px;
+            color: #ecf0f1;
+        }
+        
+        .sidebar-header p {
+            color: #bdc3c7;
+            font-size: 0.9rem;
+        }
+        
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 15px;
+            padding: 10px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 6px;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #e74c3c;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-dot.connected {
+            background: #27ae60;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        
+        .status-text {
+            font-size: 0.85rem;
+            color: #bdc3c7;
+        }
+        
+        .browser-info {
+            padding: 20px;
+            border-bottom: 1px solid #34495e;
+        }
+        
+        .browser-info h3 {
+            font-size: 1rem;
+            margin-bottom: 10px;
+            color: #ecf0f1;
+        }
+        
+        .browser-url {
+            background: rgba(0,0,0,0.2);
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            color: #bdc3c7;
+            word-break: break-all;
+            margin-bottom: 8px;
+        }
+        
+        .browser-title {
+            font-size: 0.85rem;
+            color: #ecf0f1;
+            margin-bottom: 15px;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .btn-small {
+            padding: 6px 12px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .btn-small:hover {
+            background: #2980b9;
+        }
+        
+        .btn-small:disabled {
+            background: #7f8c8d;
+            cursor: not-allowed;
+        }
+        
+        /* Main Chat Area */
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: white;
+        }
+        
+        .chat-header {
+            padding: 15px 20px;
+            background: white;
+            border-bottom: 1px solid #e1e5e9;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .chat-header h2 {
+            color: #2c3e50;
+            font-size: 1.3rem;
+            margin-bottom: 5px;
+        }
+        
+        .chat-subtitle {
+            color: #7f8c8d;
+            font-size: 0.9rem;
+        }
+        
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        
+        .message {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 18px;
+            position: relative;
+            animation: messageSlideIn 0.3s ease-out;
+        }
+        
+        @keyframes messageSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .message.user {
+            align-self: flex-end;
+            background: #007AFF;
+            color: white;
+            border-bottom-right-radius: 4px;
+        }
+        
+        .message.agent {
+            align-self: flex-start;
+            background: #f1f3f5;
+            color: #2c3e50;
+            border-bottom-left-radius: 4px;
+            border: 1px solid #e1e5e9;
+        }
+        
+        .message-content {
+            margin: 0;
+            line-height: 1.4;
+        }
+        
+        .message-time {
+            font-size: 0.75rem;
+            opacity: 0.7;
+            margin-top: 5px;
+        }
+        
+        .typing-indicator {
+            align-self: flex-start;
+            background: #f1f3f5;
+            border: 1px solid #e1e5e9;
+            padding: 16px;
+            border-radius: 18px;
+            border-bottom-left-radius: 4px;
+            display: none;
+        }
+        
+        .typing-dots {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+        
+        .typing-dot {
+            width: 8px;
+            height: 8px;
+            background: #7f8c8d;
+            border-radius: 50%;
+            animation: typingBounce 1.4s infinite ease-in-out;
+        }
+        
+        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
+        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
+        .typing-dot:nth-child(3) { animation-delay: 0s; }
+        
+        @keyframes typingBounce {
+            0%, 80%, 100% {
+                transform: scale(0.8);
+                opacity: 0.5;
+            }
+            40% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+        
+        .typing-text {
+            margin-left: 10px;
+            color: #7f8c8d;
+            font-size: 0.9rem;
+        }
+        
+        /* Input Area */
+        .input-container {
+            padding: 20px;
+            background: white;
+            border-top: 1px solid #e1e5e9;
+        }
+        
+        .input-wrapper {
+            display: flex;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        
+        .message-input {
+            flex: 1;
+            min-height: 44px;
+            max-height: 120px;
+            padding: 12px 16px;
+            border: 2px solid #e1e5e9;
+            border-radius: 22px;
+            resize: none;
+            font-family: inherit;
+            font-size: 0.95rem;
+            line-height: 1.4;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        
+        .message-input:focus {
+            border-color: #007AFF;
+        }
+        
+        .message-input::placeholder {
+            color: #7f8c8d;
+        }
+        
+        .send-button {
+            width: 44px;
+            height: 44px;
+            background: #007AFF;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s, transform 0.1s;
+            font-size: 1.1rem;
+        }
+        
+        .send-button:hover {
+            background: #0056b3;
+            transform: scale(1.05);
+        }
+        
+        .send-button:disabled {
+            background: #bdc3c7;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        /* Welcome Message */
+        .welcome-message {
+            text-align: center;
+            color: #7f8c8d;
+            margin: 40px 20px;
+        }
+        
+        .welcome-message h3 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        
+        /* Error Messages */
+        .error-message {
+            background: #e74c3c;
+            color: white;
+            padding: 10px 15px;
+            border-radius: 6px;
+            margin: 10px 20px;
+            display: none;
+        }
+        
+        /* Screenshots Modal */
+        .screenshot-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.8);
+            display: none;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+        
+        .screenshot-content {
+            max-width: 90%;
+            max-height: 90%;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .screenshot-image {
+            max-width: 100%;
+            max-height: 70vh;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .close-modal {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            background: none;
+            border: none;
+            font-size: 24px;
+            color: white;
+            cursor: pointer;
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .app-container {
+                flex-direction: column;
+            }
+            
+            .sidebar {
+                width: 100%;
+                height: auto;
+                order: 2;
+            }
+            
+            .chat-container {
+                order: 1;
+                height: 70vh;
+            }
+            
+            .message {
+                max-width: 85%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h1>🤖 AI Browser Agent</h1>
+                <p>Web Interface v1.0</p>
+                
+                <div class="status-indicator">
+                    <div class="status-dot" id="connectionStatus"></div>
+                    <span class="status-text" id="connectionText">Connecting...</span>
+                </div>
+            </div>
+            
+            <div class="browser-info">
+                <h3>🌐 Browser Session</h3>
+                <div class="browser-url" id="browserUrl">about:blank</div>
+                <div class="browser-title" id="browserTitle">No page loaded</div>
+                
+                <div class="action-buttons">
+                    <button class="btn-small" id="screenshotBtn" disabled>📸 Screenshot</button>
+                    <button class="btn-small" id="refreshInfoBtn" disabled>🔄 Refresh Info</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Main Chat Area -->
+        <div class="chat-container">
+            <div class="chat-header">
+                <h2>Browser Automation Chat</h2>
+                <p class="chat-subtitle">Give me instructions and I'll automate your browser tasks</p>
+            </div>
+            
+            <div class="error-message" id="errorMessage"></div>
+            
+            <div class="messages-container" id="messagesContainer">
+                <div class="welcome-message">
+                    <h3>👋 Welcome to AI Browser Agent!</h3>
+                    <p>I can help you automate web tasks through natural language commands.</p>
+                    <p>Try saying: "Go to Google and search for AI news" or "Navigate to GitHub"</p>
+                </div>
+                
+                <div class="typing-indicator" id="typingIndicator">
+                    <div class="typing-dots">
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                        <div class="typing-dot"></div>
+                    </div>
+                    <span class="typing-text">Agent is thinking...</span>
+                </div>
+            </div>
+            
+            <div class="input-container">
+                <div class="input-wrapper">
+                    <textarea 
+                        id="messageInput" 
+                        class="message-input" 
+                        placeholder="Type your browser automation request here..."
+                        rows="1"
+                        disabled
+                    ></textarea>
+                    <button id="sendButton" class="send-button" disabled>
+                        ➤
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Screenshot Modal -->
+    <div class="screenshot-modal" id="screenshotModal">
+        <button class="close-modal" onclick="closeScreenshotModal()">×</button>
+        <div class="screenshot-content">
+            <h3>Browser Screenshot</h3>
+            <img id="screenshotImage" class="screenshot-image" src="" alt="Browser Screenshot">
+        </div>
+    </div>
+
+    <script>
+        // Initialize Socket.IO connection
+        const socket = io();
+        
+        // DOM elements
+        const messagesContainer = document.getElementById('messagesContainer');
+        const messageInput = document.getElementById('messageInput');
+        const sendButton = document.getElementById('sendButton');
+        const connectionStatus = document.getElementById('connectionStatus');
+        const connectionText = document.getElementById('connectionText');
+        const browserUrl = document.getElementById('browserUrl');
+        const browserTitle = document.getElementById('browserTitle');
+        const screenshotBtn = document.getElementById('screenshotBtn');
+        const refreshInfoBtn = document.getElementById('refreshInfoBtn');
+        const typingIndicator = document.getElementById('typingIndicator');
+        const errorMessage = document.getElementById('errorMessage');
+        const screenshotModal = document.getElementById('screenshotModal');
+        const screenshotImage = document.getElementById('screenshotImage');
+        
+        let isConnected = false;
+        let sessionInitialized = false;
+        
+        // Socket event handlers
+        socket.on('connect', function() {
+            console.log('Connected to server');
+            isConnected = true;
+            updateConnectionStatus(true, 'Connected');
+            
+            // Initialize session
+            socket.emit('initialize_session', {
+                user_data: {
+                    timestamp: new Date().toISOString(),
+                    user_agent: navigator.userAgent
+                }
+            });
+        });
+        
+        socket.on('disconnect', function() {
+            console.log('Disconnected from server');
+            isConnected = false;
+            sessionInitialized = false;
+            updateConnectionStatus(false, 'Disconnected');
+            disableControls();
+        });
+        
+        socket.on('session_initialized', function(data) {
+            console.log('Session initialized:', data);
+            sessionInitialized = true;
+            updateConnectionStatus(true, 'Ready');
+            enableControls();
+            showSystemMessage('Session initialized! You can now send commands to the browser agent.');
+        });
+        
+        socket.on('message_received', function(data) {
+            console.log('Message received confirmation:', data);
+            addMessage(data.content, 'user', data.timestamp);
+        });
+        
+        socket.on('agent_response', function(data) {
+            console.log('Agent response:', data);
+            addMessage(data.content, 'agent', data.timestamp);
+            
+            // Show any actions taken
+            if (data.actions_taken && data.actions_taken.length > 0) {
+                const actionsText = data.actions_taken
+                    .map(action => `${action.action}: ${action.status}`)
+                    .join(', ');
+                addMessage(`Actions taken: ${actionsText}`, 'agent', data.timestamp, true);
+            }
+        });
+        
+        socket.on('typing_start', function(data) {
+            showTypingIndicator();
+        });
+        
+        socket.on('typing_stop', function() {
+            hideTypingIndicator();
+        });
+        
+        socket.on('status_update', function(data) {
+            console.log('Status update:', data);
+            updateConnectionStatus(true, data.status);
+        });
+        
+        socket.on('browser_info', function(data) {
+            console.log('Browser info:', data);
+            browserUrl.textContent = data.url;
+            browserTitle.textContent = data.title;
+        });
+        
+        socket.on('browser_screenshot', function(data) {
+            console.log('Screenshot received');
+            showScreenshot(data.image_data);
+        });
+        
+        socket.on('error', function(data) {
+            console.error('Socket error:', data);
+            showError(data.message);
+        });
+        
+        // UI Functions
+        function updateConnectionStatus(connected, status) {
+            if (connected) {
+                connectionStatus.classList.add('connected');
+                connectionText.textContent = status;
+            } else {
+                connectionStatus.classList.remove('connected');
+                connectionText.textContent = status;
+            }
+        }
+        
+        function enableControls() {
+            messageInput.disabled = false;
+            sendButton.disabled = false;
+            screenshotBtn.disabled = false;
+            refreshInfoBtn.disabled = false;
+            messageInput.focus();
+        }
+        
+        function disableControls() {
+            messageInput.disabled = true;
+            sendButton.disabled = true;
+            screenshotBtn.disabled = true;
+            refreshInfoBtn.disabled = true;
+        }
+        
+        function addMessage(content, type, timestamp, isSubtle = false) {
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${type}`;
+            if (isSubtle) messageDiv.style.opacity = '0.8';
+            
+            const contentP = document.createElement('p');
+            contentP.className = 'message-content';
+            contentP.textContent = content;
+            
+            const timeDiv = document.createElement('div');
+            timeDiv.className = 'message-time';
+            timeDiv.textContent = new Date(timestamp).toLocaleTimeString();
+            
+            messageDiv.appendChild(contentP);
+            messageDiv.appendChild(timeDiv);
+            
+            // Insert before typing indicator
+            messagesContainer.insertBefore(messageDiv, typingIndicator);
+            scrollToBottom();
+        }
+        
+        function showSystemMessage(message) {
+            addMessage(message, 'agent', new Date().toISOString(), true);
+        }
+        
+        function showTypingIndicator() {
+            typingIndicator.style.display = 'block';
+            scrollToBottom();
+        }
+        
+        function hideTypingIndicator() {
+            typingIndicator.style.display = 'none';
+        }
+        
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            setTimeout(() => {
+                errorMessage.style.display = 'none';
+            }, 5000);
+        }
+        
+        function scrollToBottom() {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+        
+        function showScreenshot(imageData) {
+            screenshotImage.src = imageData;
+            screenshotModal.style.display = 'flex';
+        }
+        
+        function closeScreenshotModal() {
+            screenshotModal.style.display = 'none';
+        }
+        
+        // Event listeners
+        sendButton.addEventListener('click', sendMessage);
+        
+        messageInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+        
+        messageInput.addEventListener('input', function() {
+            // Auto-resize textarea
+            this.style.height = 'auto';
+            this.style.height = Math.min(this.scrollHeight, 120) + 'px';
+        });
+        
+        screenshotBtn.addEventListener('click', function() {
+            socket.emit('get_browser_screenshot');
+        });
+        
+        refreshInfoBtn.addEventListener('click', function() {
+            socket.emit('get_browser_info');
+        });
+        
+        // Close modal when clicking outside
+        screenshotModal.addEventListener('click', function(e) {
+            if (e.target === screenshotModal) {
+                closeScreenshotModal();
+            }
+        });
+        
+        function sendMessage() {
+            const message = messageInput.value.trim();
+            if (!message || !sessionInitialized) return;
+            
+            // Clear input
+            messageInput.value = '';
+            messageInput.style.height = 'auto';
+            
+            // Send message
+            socket.emit('send_message', { message: message });
+        }
+        
+        // Initialize
+        console.log('AI Browser Agent Web Interface loaded');
+    </script>
+</body>
+</html>
