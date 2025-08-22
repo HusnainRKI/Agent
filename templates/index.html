@@ -142,6 +142,107 @@
             cursor: not-allowed;
         }
         
+        /* Browser View Container */
+        .browser-view-container {
+            padding: 20px;
+            border-bottom: 1px solid #34495e;
+        }
+        
+        .browser-view-container h3 {
+            font-size: 1rem;
+            margin-bottom: 10px;
+            color: #ecf0f1;
+        }
+        
+        .browser-view {
+            position: relative;
+            background: #34495e;
+            border-radius: 6px;
+            min-height: 200px;
+            max-height: 300px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .browser-placeholder {
+            color: #bdc3c7;
+            text-align: center;
+            font-size: 0.9rem;
+        }
+        
+        .browser-canvas {
+            width: 100%;
+            height: auto;
+            border-radius: 4px;
+        }
+        
+        .cursor-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+        
+        .ai-cursor-indicator {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background: #e74c3c;
+            border: 2px solid white;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            box-shadow: 0 0 10px rgba(231, 76, 60, 0.6);
+            animation: cursorPulse 1.5s infinite;
+            z-index: 11;
+        }
+        
+        @keyframes cursorPulse {
+            0% { 
+                box-shadow: 0 0 10px rgba(231, 76, 60, 0.6);
+                transform: translate(-50%, -50%) scale(1);
+            }
+            50% { 
+                box-shadow: 0 0 20px rgba(231, 76, 60, 0.8);
+                transform: translate(-50%, -50%) scale(1.1);
+            }
+            100% { 
+                box-shadow: 0 0 10px rgba(231, 76, 60, 0.6);
+                transform: translate(-50%, -50%) scale(1);
+            }
+        }
+        
+        .stream-controls {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        
+        .streaming-indicator {
+            display: none;
+            color: #e74c3c;
+            font-size: 0.8rem;
+            margin-top: 5px;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .streaming-indicator.active {
+            display: flex;
+        }
+        
+        .streaming-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #e74c3c;
+            animation: pulse 1s infinite;
+        }
+        
         /* Main Chat Area */
         .chat-container {
             flex: 1;
@@ -437,6 +538,27 @@
                 <div class="action-buttons">
                     <button class="btn-small" id="screenshotBtn" disabled>📸 Screenshot</button>
                     <button class="btn-small" id="refreshInfoBtn" disabled>🔄 Refresh Info</button>
+                    <button class="btn-small" id="streamToggleBtn" disabled>📹 Stream</button>
+                </div>
+            </div>
+            
+            <!-- Real-time Browser View -->
+            <div class="browser-view-container">
+                <h3>🖥️ Live Browser View</h3>
+                <div class="browser-view" id="browserView">
+                    <div class="browser-placeholder">
+                        <p>🚀 Start a browser session to see live view</p>
+                    </div>
+                    <canvas id="browserCanvas" style="display: none; width: 100%; border: 1px solid #ccc; border-radius: 4px;"></canvas>
+                    <div class="cursor-overlay" id="cursorOverlay" style="display: none;"></div>
+                </div>
+                <div class="stream-controls" style="margin-top: 10px;">
+                    <button class="btn-small" id="streamStartBtn" disabled>▶️ Start Stream</button>
+                    <button class="btn-small" id="streamStopBtn" disabled>⏹️ Stop Stream</button>
+                </div>
+                <div class="streaming-indicator" id="streamingIndicator">
+                    <div class="streaming-dot"></div>
+                    <span>Live streaming active</span>
                 </div>
             </div>
         </div>
@@ -507,6 +629,12 @@
         const browserTitle = document.getElementById('browserTitle');
         const screenshotBtn = document.getElementById('screenshotBtn');
         const refreshInfoBtn = document.getElementById('refreshInfoBtn');
+        const streamToggleBtn = document.getElementById('streamToggleBtn');
+        const streamStartBtn = document.getElementById('streamStartBtn');
+        const streamStopBtn = document.getElementById('streamStopBtn');
+        const browserView = document.getElementById('browserView');
+        const browserCanvas = document.getElementById('browserCanvas');
+        const cursorOverlay = document.getElementById('cursorOverlay');
         const typingIndicator = document.getElementById('typingIndicator');
         const errorMessage = document.getElementById('errorMessage');
         const screenshotModal = document.getElementById('screenshotModal');
@@ -514,6 +642,8 @@
         
         let isConnected = false;
         let sessionInitialized = false;
+        let isStreaming = false;
+        let currentCursorPosition = {x: 0, y: 0, visible: false};
         
         // Socket event handlers
         socket.on('connect', function() {
@@ -593,6 +723,39 @@
             showError(data.message);
         });
         
+        // New socket handlers for browser streaming and control
+        socket.on('browser_stream_frame', function(data) {
+            console.log('Browser stream frame received');
+            updateBrowserView(data.image_data);
+            updateCursorPosition(data.cursor_position);
+            if (data.browser_info) {
+                browserUrl.textContent = data.browser_info.url;
+                browserTitle.textContent = data.browser_info.title;
+            }
+        });
+        
+        socket.on('stream_started', function(data) {
+            console.log('Stream started:', data);
+            isStreaming = true;
+            updateStreamingUI();
+        });
+        
+        socket.on('stream_stopped', function(data) {
+            console.log('Stream stopped:', data);
+            isStreaming = false;
+            updateStreamingUI();
+        });
+        
+        socket.on('browser_control_result', function(data) {
+            console.log('Browser control result:', data);
+            showSystemMessage(`${data.action}: ${data.message}`);
+        });
+        
+        socket.on('cursor_position', function(data) {
+            console.log('Cursor position:', data);
+            updateCursorPosition(data);
+        });
+        
         // UI Functions
         function updateConnectionStatus(connected, status) {
             if (connected) {
@@ -609,6 +772,9 @@
             sendButton.disabled = false;
             screenshotBtn.disabled = false;
             refreshInfoBtn.disabled = false;
+            streamToggleBtn.disabled = false;
+            streamStartBtn.disabled = false;
+            streamStopBtn.disabled = false;
             messageInput.focus();
         }
         
@@ -617,6 +783,9 @@
             sendButton.disabled = true;
             screenshotBtn.disabled = true;
             refreshInfoBtn.disabled = true;
+            streamToggleBtn.disabled = true;
+            streamStartBtn.disabled = true;
+            streamStopBtn.disabled = true;
         }
         
         function addMessage(content, type, timestamp, isSubtle = false) {
@@ -674,6 +843,101 @@
             screenshotModal.style.display = 'none';
         }
         
+        // Browser streaming and control functions
+        function updateBrowserView(imageData) {
+            const placeholder = browserView.querySelector('.browser-placeholder');
+            
+            // Hide placeholder and show canvas
+            if (placeholder) {
+                placeholder.style.display = 'none';
+            }
+            browserCanvas.style.display = 'block';
+            
+            // Create canvas context and draw image
+            const ctx = browserCanvas.getContext('2d');
+            const img = new Image();
+            
+            img.onload = function() {
+                // Set canvas size to match container
+                const containerWidth = browserView.clientWidth - 20; // Account for padding
+                const aspectRatio = img.height / img.width;
+                const canvasHeight = Math.min(containerWidth * aspectRatio, 300);
+                
+                browserCanvas.width = containerWidth;
+                browserCanvas.height = canvasHeight;
+                browserCanvas.style.width = containerWidth + 'px';
+                browserCanvas.style.height = canvasHeight + 'px';
+                
+                // Draw the image
+                ctx.clearRect(0, 0, browserCanvas.width, browserCanvas.height);
+                ctx.drawImage(img, 0, 0, browserCanvas.width, browserCanvas.height);
+            };
+            
+            img.src = imageData;
+        }
+        
+        function updateCursorPosition(cursorData) {
+            currentCursorPosition = cursorData;
+            
+            if (cursorData.visible && browserCanvas.style.display !== 'none') {
+                // Show cursor overlay
+                cursorOverlay.style.display = 'block';
+                
+                // Remove existing cursor indicator
+                const existingCursor = cursorOverlay.querySelector('.ai-cursor-indicator');
+                if (existingCursor) {
+                    existingCursor.remove();
+                }
+                
+                // Create new cursor indicator
+                const cursorIndicator = document.createElement('div');
+                cursorIndicator.className = 'ai-cursor-indicator';
+                
+                // Calculate position relative to canvas
+                const canvasRect = browserCanvas.getBoundingClientRect();
+                const overlayRect = cursorOverlay.getBoundingClientRect();
+                
+                const scaleX = canvasRect.width / browserCanvas.width;
+                const scaleY = canvasRect.height / browserCanvas.height;
+                
+                const x = cursorData.x * scaleX;
+                const y = cursorData.y * scaleY;
+                
+                cursorIndicator.style.left = x + 'px';
+                cursorIndicator.style.top = y + 'px';
+                
+                cursorOverlay.appendChild(cursorIndicator);
+            } else {
+                cursorOverlay.style.display = 'none';
+            }
+        }
+        
+        function updateStreamingUI() {
+            if (isStreaming) {
+                streamStartBtn.textContent = '⏸️ Streaming...';
+                streamStartBtn.disabled = true;
+                streamStopBtn.disabled = false;
+                streamToggleBtn.textContent = '📹 Stop';
+            } else {
+                streamStartBtn.textContent = '▶️ Start Stream';
+                streamStartBtn.disabled = false;
+                streamStopBtn.disabled = true;
+                streamToggleBtn.textContent = '📹 Stream';
+            }
+        }
+        
+        function startBrowserStream() {
+            if (!isStreaming) {
+                socket.emit('start_browser_stream');
+            }
+        }
+        
+        function stopBrowserStream() {
+            if (isStreaming) {
+                socket.emit('stop_browser_stream');
+            }
+        }
+        
         // Event listeners
         sendButton.addEventListener('click', sendMessage);
         
@@ -696,6 +960,36 @@
         
         refreshInfoBtn.addEventListener('click', function() {
             socket.emit('get_browser_info');
+        });
+        
+        // New streaming control event listeners
+        streamStartBtn.addEventListener('click', startBrowserStream);
+        streamStopBtn.addEventListener('click', stopBrowserStream);
+        
+        streamToggleBtn.addEventListener('click', function() {
+            if (isStreaming) {
+                stopBrowserStream();
+            } else {
+                startBrowserStream();
+            }
+        });
+        
+        // Browser view click handler for direct interaction
+        browserCanvas.addEventListener('click', function(e) {
+            if (!sessionInitialized) return;
+            
+            const rect = browserCanvas.getBoundingClientRect();
+            const scaleX = browserCanvas.width / rect.width;
+            const scaleY = browserCanvas.height / rect.height;
+            
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+            
+            // Send browser control command
+            socket.emit('browser_control', {
+                action: 'click',
+                params: { x: x, y: y }
+            });
         });
         
         // Close modal when clicking outside

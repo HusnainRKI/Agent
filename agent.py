@@ -126,14 +126,18 @@ AI_CONFIGS = {
     }
 }
 
-# Default AI provider
-DEFAULT_AI_PROVIDER = "typegpt"
-API_KEY = AI_CONFIGS[DEFAULT_AI_PROVIDER]["api_key"]
-API_ENDPOINT_URL = AI_CONFIGS[DEFAULT_AI_PROVIDER]["endpoint"]
-MODEL_NAME = AI_CONFIGS[DEFAULT_AI_PROVIDER]["model"]
+# Default AI provider from environment or fallback
+DEFAULT_AI_PROVIDER = os.getenv("DEFAULT_AI_PROVIDER", "openai")
 
-if not API_KEY or not API_ENDPOINT_URL:
-    logger.warning("Primary AI API key or base URL not found. Some AI features may be limited.")
+# Override endpoint and model if specified in environment
+API_ENDPOINT_URL = os.getenv("API_ENDPOINT_URL", AI_CONFIGS[DEFAULT_AI_PROVIDER]["endpoint"])
+MODEL_NAME = os.getenv("MODEL_NAME", AI_CONFIGS[DEFAULT_AI_PROVIDER]["model"])
+API_KEY = AI_CONFIGS[DEFAULT_AI_PROVIDER]["api_key"]
+
+if not API_KEY:
+    logger.warning(f"API key for {DEFAULT_AI_PROVIDER} not found. Please set the appropriate API key in your .env file. Some AI features may be limited.")
+if not API_ENDPOINT_URL:
+    logger.warning("API endpoint URL not configured. Some AI features may be limited.")
 
 @dataclass
 class ElementInfo:
