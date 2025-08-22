@@ -20,6 +20,9 @@ from flask_cors import CORS
 
 # Import the existing agent
 from agent import MegaAdvancedBrowserAgent
+# Import Selenium components needed for web actions
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -39,30 +42,51 @@ class SessionManager:
                 return self.sessions[session_id]
             
             # Create new agent instance for this session
-            agent = MegaAdvancedBrowserAgent(
-                headless=False,  # Set to True for production
-                window_size=(1920, 1080),
-                enable_extensions=True,
-                enable_ai=True,
-                multi_browser=False,
-                browser_count=1
-            )
-            
-            session_data = {
-                'id': session_id,
-                'agent': agent,
-                'created_at': datetime.now(),
-                'last_activity': datetime.now(),
-                'status': 'initialized',
-                'user_data': user_data or {},
-                'message_history': [],
-                'browser_url': 'about:blank',
-                'browser_title': 'New Tab'
-            }
-            
-            self.sessions[session_id] = session_data
-            logger.info(f"Created new session: {session_id}")
-            return session_data
+            try:
+                agent = MegaAdvancedBrowserAgent(
+                    headless=False,  # Set to True for production
+                    window_size=(1920, 1080),
+                    enable_extensions=True,
+                    enable_ai=True,
+                    multi_browser=False,
+                    browser_count=1
+                )
+                
+                session_data = {
+                    'id': session_id,
+                    'agent': agent,
+                    'created_at': datetime.now(),
+                    'last_activity': datetime.now(),
+                    'status': 'initialized',
+                    'user_data': user_data or {},
+                    'message_history': [],
+                    'browser_url': 'about:blank',
+                    'browser_title': 'New Tab',
+                    'browser_initialized': False
+                }
+                
+                self.sessions[session_id] = session_data
+                logger.info(f"Created new session: {session_id}")
+                return session_data
+                
+            except Exception as e:
+                logger.error(f"Error creating session {session_id}: {e}")
+                # Create a minimal session even if agent creation fails
+                session_data = {
+                    'id': session_id,
+                    'agent': None,
+                    'created_at': datetime.now(),
+                    'last_activity': datetime.now(),
+                    'status': 'error',
+                    'user_data': user_data or {},
+                    'message_history': [],
+                    'browser_url': 'Error',
+                    'browser_title': 'Failed to initialize',
+                    'browser_initialized': False,
+                    'error': str(e)
+                }
+                self.sessions[session_id] = session_data
+                return session_data
     
     def get_session(self, session_id: str) -> Optional[Dict]:
         """Get session by ID."""
@@ -246,25 +270,35 @@ class WebAgentApp:
                     emit('error', {'message': 'No active session found'})
                     return
                 
-                # Take screenshot
                 agent = session['agent']
-                screenshot_path = agent.save_advanced_screenshot()
                 
-                if screenshot_path and os.path.exists(screenshot_path):
-                    # Convert to base64
-                    with open(screenshot_path, 'rb') as f:
-                        screenshot_data = base64.b64encode(f.read()).decode()
+                # Check if browser is initialized
+                if not hasattr(agent, 'driver') or agent.driver is None:
+                    emit('error', {'message': 'Browser session not initialized. Please send a command first.'})
+                    return
+                
+                # Take screenshot
+                try:
+                    screenshot_path = agent.save_advanced_screenshot()
                     
-                    emit('browser_screenshot', {
-                        'image_data': f"data:image/png;base64,{screenshot_data}",
-                        'timestamp': datetime.now().isoformat()
-                    })
-                else:
-                    emit('error', {'message': 'Failed to capture screenshot'})
+                    if screenshot_path and os.path.exists(screenshot_path):
+                        # Convert to base64
+                        with open(screenshot_path, 'rb') as f:
+                            screenshot_data = base64.b64encode(f.read()).decode()
+                        
+                        emit('browser_screenshot', {
+                            'image_data': f"data:image/png;base64,{screenshot_data}",
+                            'timestamp': datetime.now().isoformat()
+                        })
+                    else:
+                        emit('error', {'message': 'Failed to capture screenshot'})
+                except Exception as e:
+                    logger.error(f"Screenshot capture error: {e}")
+                    emit('error', {'message': f'Screenshot error: {str(e)}'})
                     
             except Exception as e:
-                logger.error(f"Error capturing screenshot: {e}")
-                emit('error', {'message': f'Screenshot error: {str(e)}'})
+                logger.error(f"Error handling screenshot request: {e}")
+                emit('error', {'message': f'Screenshot request error: {str(e)}'})
         
         @self.socketio.on('get_browser_info')
         def handle_browser_info_request():
@@ -278,6 +312,15 @@ class WebAgentApp:
                     return
                 
                 agent = session['agent']
+                
+                # Check if browser is initialized
+                if not hasattr(agent, 'driver') or agent.driver is None:
+                    emit('browser_info', {
+                        'url': 'about:blank',
+                        'title': 'Browser not initialized',
+                        'timestamp': datetime.now().isoformat()
+                    })
+                    return
                 
                 # Get browser info
                 try:
@@ -295,9 +338,10 @@ class WebAgentApp:
                     })
                     
                 except Exception as e:
+                    logger.error(f"Browser info error: {e}")
                     emit('browser_info', {
-                        'url': 'about:blank',
-                        'title': 'Browser not ready',
+                        'url': 'Error getting URL',
+                        'title': 'Error getting title',
                         'timestamp': datetime.now().isoformat()
                     })
                     
@@ -320,32 +364,137 @@ class WebAgentApp:
             # Emit status update
             self.socketio.emit('status_update', {
                 'status': 'processing',
-                'message': 'Agent is working on your request...'
+                'message': 'Agent is analyzing your request...'
             }, room=session_id)
             
             # Initialize the agent if needed
             if not hasattr(agent, 'driver') or agent.driver is None:
-                agent._initialize_driver()
-                agent._initialize_advanced_visual_elements()
+                try:
+                    agent._initialize_driver()
+                    agent._initialize_advanced_visual_elements()
+                    
+                    # Navigate to a blank page initially
+                    agent.driver.get("about:blank")
+                    
+                    self.socketio.emit('status_update', {
+                        'status': 'processing',
+                        'message': 'Browser session initialized. Processing your request...'
+                    }, room=session_id)
+                    
+                except Exception as e:
+                    logger.error(f"Error initializing agent driver: {e}")
+                    self.socketio.emit('error', {
+                        'message': f'Failed to initialize browser session: {str(e)}'
+                    }, room=session_id)
+                    return
             
-            # Process the objective with the agent
-            # This is a simplified version - you might want to integrate this more deeply
-            # with the existing agent's process_objective method
+            # Process the objective with a simplified approach
+            # For demo purposes, we'll perform basic navigation based on the message
+            response_content = ""
+            actions_taken = []
             
-            # For now, let's simulate agent processing and provide a response
-            import time
-            time.sleep(2)  # Simulate processing time
+            try:
+                # Simple command parsing
+                message_lower = message.lower()
+                
+                if "navigate" in message_lower or "go to" in message_lower:
+                    # Extract URL or domain
+                    if "google" in message_lower:
+                        agent.driver.get("https://www.google.com")
+                        response_content = "I navigated to Google.com as requested."
+                        actions_taken.append({'action': 'navigate_to_google', 'status': 'completed'})
+                    elif "github" in message_lower:
+                        agent.driver.get("https://github.com")
+                        response_content = "I navigated to GitHub.com as requested."
+                        actions_taken.append({'action': 'navigate_to_github', 'status': 'completed'})
+                    elif "example" in message_lower:
+                        agent.driver.get("https://example.com")
+                        response_content = "I navigated to Example.com as requested."
+                        actions_taken.append({'action': 'navigate_to_example', 'status': 'completed'})
+                    else:
+                        response_content = "I understand you want to navigate somewhere. Please specify a clear URL or website name (e.g., 'go to Google', 'navigate to GitHub')."
+                        actions_taken.append({'action': 'parse_navigation_request', 'status': 'completed'})
+                
+                elif "search" in message_lower:
+                    if hasattr(agent, 'driver') and agent.driver.current_url:
+                        current_url = agent.driver.current_url
+                        if "google.com" in current_url:
+                            # Try to find and use search box
+                            try:
+                                search_box = agent.driver.find_element(By.NAME, "q")
+                                search_terms = message.replace("search for", "").replace("search", "").strip()
+                                search_box.send_keys(search_terms)
+                                search_box.send_keys(Keys.RETURN)
+                                response_content = f"I searched for '{search_terms}' on Google."
+                                actions_taken.extend([
+                                    {'action': 'find_search_box', 'status': 'completed'},
+                                    {'action': 'enter_search_terms', 'status': 'completed'},
+                                    {'action': 'submit_search', 'status': 'completed'}
+                                ])
+                            except Exception as e:
+                                response_content = "I tried to search but couldn't find the search box. Please try navigating to Google first."
+                                actions_taken.append({'action': 'search_attempt', 'status': 'failed'})
+                        else:
+                            response_content = "To search, please first navigate to a search engine like Google."
+                            actions_taken.append({'action': 'search_validation', 'status': 'completed'})
+                    else:
+                        response_content = "Please navigate to a search engine first, then I can help you search."
+                        actions_taken.append({'action': 'search_prerequisite_check', 'status': 'completed'})
+                
+                elif "screenshot" in message_lower or "capture" in message_lower:
+                    # Take a screenshot using the agent
+                    try:
+                        screenshot_path = agent.save_advanced_screenshot()
+                        if screenshot_path and os.path.exists(screenshot_path):
+                            response_content = "I took a screenshot of the current page."
+                            actions_taken.append({'action': 'capture_screenshot', 'status': 'completed'})
+                            
+                            # Send the screenshot via WebSocket
+                            with open(screenshot_path, 'rb') as f:
+                                screenshot_data = base64.b64encode(f.read()).decode()
+                            
+                            self.socketio.emit('browser_screenshot', {
+                                'image_data': f"data:image/png;base64,{screenshot_data}",
+                                'timestamp': datetime.now().isoformat()
+                            }, room=session_id)
+                        else:
+                            response_content = "I attempted to take a screenshot but encountered an issue."
+                            actions_taken.append({'action': 'capture_screenshot', 'status': 'failed'})
+                    except Exception as e:
+                        response_content = f"Screenshot failed: {str(e)}"
+                        actions_taken.append({'action': 'capture_screenshot', 'status': 'failed'})
+                
+                else:
+                    # General response for unrecognized commands
+                    response_content = f'I received your message: "{message}". I can help you with browser automation tasks like:\n\n• "Navigate to Google" or "Go to GitHub"\n• "Search for AI news" (after navigating to Google)\n• "Take a screenshot"\n\nPlease give me a specific command to execute.'
+                    actions_taken.append({'action': 'analyze_request', 'status': 'completed'})
+                
+                # Update browser info in session
+                try:
+                    if hasattr(agent, 'driver') and agent.driver:
+                        session['browser_url'] = agent.driver.current_url
+                        session['browser_title'] = agent.driver.title
+                        
+                        # Send updated browser info
+                        self.socketio.emit('browser_info', {
+                            'url': session['browser_url'],
+                            'title': session['browser_title'],
+                            'timestamp': datetime.now().isoformat()
+                        }, room=session_id)
+                except:
+                    pass  # Ignore browser info errors
+                
+            except Exception as e:
+                logger.error(f"Error processing agent command: {e}")
+                response_content = f"I encountered an error while processing your request: {str(e)}"
+                actions_taken.append({'action': 'error_handling', 'status': 'failed'})
             
             # Create agent response
             agent_response = {
                 'type': 'agent',
-                'content': f'I received your message: "{message}". I\'m now processing this request using the browser automation system. This is a demonstration of the web interface integration.',
+                'content': response_content,
                 'timestamp': datetime.now().isoformat(),
-                'actions_taken': [
-                    {'action': 'analyze_request', 'status': 'completed'},
-                    {'action': 'prepare_browser', 'status': 'completed'},
-                    {'action': 'ready_for_execution', 'status': 'pending'}
-                ]
+                'actions_taken': actions_taken
             }
             
             # Add response to history
