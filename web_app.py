@@ -136,14 +136,8 @@ class WebAgentApp:
             self.app, 
             cors_allowed_origins="*",
             async_mode='eventlet',
-            logger=True,
-            engineio_logger=True,
-            # Fix protocol version compatibility
-            transports=['websocket', 'polling'],
-            ping_timeout=60,
-            ping_interval=25,
-            max_http_buffer_size=1000000,
-            allow_upgrades=True
+            logger=False,
+            engineio_logger=False
         )
         
         # Initialize session manager

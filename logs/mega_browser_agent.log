@@ -5,3 +5,11 @@
 2025-08-22 21:49:52,803 - agent - WARNING - <module>:136 - Primary AI API key or base URL not found. Some AI features may be limited.
 2025-08-22 21:57:34,429 - agent - WARNING - <module>:138 - API key for openai not found. Please set the appropriate API key in your .env file. Some AI features may be limited.
 2025-08-22 21:57:34,429 - agent - WARNING - <module>:140 - API endpoint URL not configured. Some AI features may be limited.
+2025-08-22 21:58:17,521 - agent - WARNING - <module>:138 - API key for openai not found. Please set the appropriate API key in your .env file. Some AI features may be limited.
+2025-08-22 21:58:17,521 - agent - WARNING - <module>:140 - API endpoint URL not configured. Some AI features may be limited.
+2025-08-22 21:59:11,124 - agent - WARNING - <module>:138 - API key for openai not found. Please set the appropriate API key in your .env file. Some AI features may be limited.
+2025-08-22 21:59:11,124 - agent - WARNING - <module>:140 - API endpoint URL not configured. Some AI features may be limited.
+2025-08-22 22:00:06,995 - agent - WARNING - <module>:138 - API key for openai not found. Please set the appropriate API key in your .env file. Some AI features may be limited.
+2025-08-22 22:00:06,995 - agent - WARNING - <module>:140 - API endpoint URL not configured. Some AI features may be limited.
+2025-08-22 22:01:08,102 - agent - WARNING - <module>:138 - API key for openai not found. Please set the appropriate API key in your .env file. Some AI features may be limited.
+2025-08-22 22:01:08,102 - agent - WARNING - <module>:140 - API endpoint URL not configured. Some AI features may be limited.

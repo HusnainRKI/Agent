@@ -5,8 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Browser Agent - Web Interface</title>
     
-    <!-- Real Socket.IO Client -->
+    <!-- Socket.IO Client -->
     <script src="/socket.io/socket.io.js"></script>
+    <!-- Fallback for demo -->
+    <script>
+        if (typeof io === 'undefined') {
+            console.log('Loading Socket.IO stub for demo...');
+            document.write('<script src="/static/socket.io.stub.js"><\/script>');
+        }
+    </script>
     
     <!-- Custom Styles -->
     <style>
