@@ -13,6 +13,10 @@ from datetime import datetime
 from typing import Dict, List, Optional, Any
 from dataclasses import dataclass, field
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit, join_room, leave_room
@@ -115,14 +119,19 @@ class SessionManager:
 class WebAgentApp:
     """Main web application class."""
     
-    def __init__(self, host='0.0.0.0', port=5000, debug=False):
+    def __init__(self, host=None, port=None, debug=None):
+        # Use environment variables with fallbacks
+        self.host = host or os.getenv('WEB_HOST', '0.0.0.0')
+        self.port = int(port or os.getenv('WEB_PORT', 5000))
+        self.debug = debug if debug is not None else os.getenv('WEB_DEBUG', 'False').lower() == 'true'
+        
         self.app = Flask(__name__, static_folder='static', static_url_path='/static')
-        self.app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+        self.app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
         
         # Configure CORS
         CORS(self.app, cors_allowed_origins="*")
         
-        # Initialize SocketIO
+        # Initialize SocketIO with proper configuration
         self.socketio = SocketIO(
             self.app, 
             cors_allowed_origins="*",
@@ -348,6 +357,208 @@ class WebAgentApp:
             except Exception as e:
                 logger.error(f"Error getting browser info: {e}")
                 emit('error', {'message': f'Browser info error: {str(e)}'})
+        
+        @self.socketio.on('start_browser_stream')
+        def handle_start_browser_stream():
+            """Start real-time browser screenshot streaming."""
+            try:
+                session_id = request.sid
+                session = self.session_manager.get_session(session_id)
+                
+                if not session or not session.get('agent'):
+                    emit('error', {'message': 'No active session found'})
+                    return
+                
+                # Start streaming in a separate thread
+                threading.Thread(
+                    target=self._browser_stream_worker,
+                    args=(session_id,),
+                    daemon=True
+                ).start()
+                
+                emit('stream_started', {'message': 'Browser streaming started'})
+                
+            except Exception as e:
+                logger.error(f"Error starting browser stream: {e}")
+                emit('error', {'message': f'Stream start error: {str(e)}'})
+        
+        @self.socketio.on('stop_browser_stream')
+        def handle_stop_browser_stream():
+            """Stop real-time browser screenshot streaming."""
+            try:
+                session_id = request.sid
+                session = self.session_manager.get_session(session_id)
+                
+                if session:
+                    session['streaming'] = False
+                
+                emit('stream_stopped', {'message': 'Browser streaming stopped'})
+                
+            except Exception as e:
+                logger.error(f"Error stopping browser stream: {e}")
+                emit('error', {'message': f'Stream stop error: {str(e)}'})
+        
+        @self.socketio.on('browser_control')
+        def handle_browser_control(data):
+            """Handle direct browser control commands."""
+            try:
+                session_id = request.sid
+                session = self.session_manager.get_session(session_id)
+                
+                if not session or not session.get('agent'):
+                    emit('error', {'message': 'No active session found'})
+                    return
+                
+                agent = session['agent']
+                
+                if not hasattr(agent, 'driver') or agent.driver is None:
+                    emit('error', {'message': 'Browser not initialized'})
+                    return
+                
+                action = data.get('action')
+                params = data.get('params', {})
+                
+                if action == 'navigate':
+                    url = params.get('url')
+                    if url:
+                        agent.driver.get(url)
+                        emit('browser_control_result', {
+                            'action': 'navigate',
+                            'success': True,
+                            'message': f'Navigated to {url}'
+                        })
+                elif action == 'click':
+                    x = params.get('x')
+                    y = params.get('y')
+                    if x is not None and y is not None:
+                        # Click at coordinates
+                        action_chains = ActionChains(agent.driver)
+                        action_chains.move_by_offset(x, y).click().perform()
+                        emit('browser_control_result', {
+                            'action': 'click',
+                            'success': True,
+                            'message': f'Clicked at ({x}, {y})'
+                        })
+                elif action == 'scroll':
+                    direction = params.get('direction', 'down')
+                    amount = params.get('amount', 300)
+                    script = f"window.scrollBy(0, {amount if direction == 'down' else -amount});"
+                    agent.driver.execute_script(script)
+                    emit('browser_control_result', {
+                        'action': 'scroll',
+                        'success': True,
+                        'message': f'Scrolled {direction}'
+                    })
+                
+            except Exception as e:
+                logger.error(f"Error handling browser control: {e}")
+                emit('error', {'message': f'Browser control error: {str(e)}'})
+        
+        @self.socketio.on('get_cursor_position')
+        def handle_get_cursor_position():
+            """Get current cursor position if visible."""
+            try:
+                session_id = request.sid
+                session = self.session_manager.get_session(session_id)
+                
+                if not session or not session.get('agent'):
+                    emit('error', {'message': 'No active session found'})
+                    return
+                
+                agent = session['agent']
+                
+                if not hasattr(agent, 'driver') or agent.driver is None:
+                    emit('error', {'message': 'Browser not initialized'})
+                    return
+                
+                # Get cursor position from JavaScript
+                cursor_script = """
+                const cursor = document.getElementById('ai-cursor');
+                if (cursor) {
+                    return {
+                        x: parseInt(cursor.style.left) || 0,
+                        y: parseInt(cursor.style.top) || 0,
+                        visible: cursor.style.display !== 'none'
+                    };
+                }
+                return {x: 0, y: 0, visible: false};
+                """
+                
+                cursor_info = agent.driver.execute_script(cursor_script)
+                
+                emit('cursor_position', cursor_info)
+                
+            except Exception as e:
+                logger.error(f"Error getting cursor position: {e}")
+                emit('error', {'message': f'Cursor position error: {str(e)}'})
+    
+    def _browser_stream_worker(self, session_id: str):
+        """Worker thread for real-time browser streaming."""
+        try:
+            session = self.session_manager.get_session(session_id)
+            if not session:
+                return
+            
+            session['streaming'] = True
+            agent = session['agent']
+            
+            while session.get('streaming', False):
+                try:
+                    if hasattr(agent, 'driver') and agent.driver is not None:
+                        # Take screenshot
+                        screenshot_path = agent.save_advanced_screenshot()
+                        
+                        if screenshot_path and os.path.exists(screenshot_path):
+                            # Convert to base64
+                            with open(screenshot_path, 'rb') as f:
+                                screenshot_data = base64.b64encode(f.read()).decode()
+                            
+                            # Also get cursor position
+                            cursor_script = """
+                            const cursor = document.getElementById('ai-cursor');
+                            if (cursor) {
+                                return {
+                                    x: parseInt(cursor.style.left) || 0,
+                                    y: parseInt(cursor.style.top) || 0,
+                                    visible: cursor.style.display !== 'none'
+                                };
+                            }
+                            return {x: 0, y: 0, visible: false};
+                            """
+                            
+                            try:
+                                cursor_info = agent.driver.execute_script(cursor_script)
+                            except:
+                                cursor_info = {'x': 0, 'y': 0, 'visible': False}
+                            
+                            # Get browser info
+                            try:
+                                browser_info = {
+                                    'url': agent.driver.current_url,
+                                    'title': agent.driver.title
+                                }
+                            except:
+                                browser_info = {'url': 'Error', 'title': 'Error'}
+                            
+                            self.socketio.emit('browser_stream_frame', {
+                                'image_data': f"data:image/png;base64,{screenshot_data}",
+                                'cursor_position': cursor_info,
+                                'browser_info': browser_info,
+                                'timestamp': datetime.now().isoformat()
+                            }, room=session_id)
+                    
+                    # Wait before next frame (limit to ~2 FPS to avoid overwhelming)
+                    time.sleep(0.5)
+                    
+                except Exception as e:
+                    logger.error(f"Error in browser stream: {e}")
+                    break
+            
+        except Exception as e:
+            logger.error(f"Browser stream worker error: {e}")
+        finally:
+            if session:
+                session['streaming'] = False
     
     def _process_agent_message(self, session_id: str, message: str):
         """Process message with the agent in a separate thread."""
