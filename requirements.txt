@@ -11,3 +11,7 @@ openpyxl
 psutil
 websocket-client
 schedule
+flask
+flask-socketio
+flask-cors
+eventlet
